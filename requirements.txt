@@ -1,0 +1,29 @@
+# Tangerine Forecasting Dependencies
+
+# Core scientific & data analysis
+numpy>=2.0.0
+pandas>=2.2.0
+scipy>=1.14.0
+
+# Visualization
+matplotlib>=3.9.0
+seaborn>=0.13.0
+
+# Machine learning & gradient boosting (GPU enabled)
+scikit-learn>=1.5.0
+xgboost>=2.1.0
+lightgbm>=4.5.0
+
+# Deep learning & time-series forecasting (PyTorch)
+# Note: For CUDA GPU acceleration, install PyTorch with:
+# pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.4.0
+lightning>=2.4.0
+pytorch-lightning>=2.4.0
+pytorch-forecasting>=1.1.0
+torchmetrics>=1.4.0
+
+# Jupyter environment
+ipykernel>=6.29.0
+ipython>=8.26.0
+tqdm>=4.66.0
