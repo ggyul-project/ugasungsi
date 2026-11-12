@@ -1,0 +1,12 @@
+{
+  "api_url": "https://apis.data.go.kr/B552845/katSale/trades",
+  "start_date": "2026-06-01",
+  "end_date": "2026-11-11",
+  "large_category_code": "06",
+  "middle_category_code": "14",
+  "market_count": 5,
+  "row_count": 13910,
+  "error_count": 0,
+  "output_dir": "D:\\hongdonjoo\\ai\\project\\ugasungsi\\output",
+  "created_at": "2026-11-12T15:08:51"
+}
