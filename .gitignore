@@ -56,3 +56,6 @@ desktop.ini
 *.log
 scratch/
 tmp/
+
+# temporary data files
+data/preprocessed_citrus_data*.csv
