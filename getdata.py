@@ -38,12 +38,12 @@ API_OPERATION = os.getenv("API_OPERATION", "").strip()
 SERVICE_KEY = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
 
 # 조회 기간
-START_DATE = os.getenv("START_DATE", "2026-06-01").strip()
-END_DATE = os.getenv("END_DATE", "2026-11-11").strip()
+START_DATE = os.getenv("START_DATE", "2023-01-01").strip()
+END_DATE = os.getenv("END_DATE", "2023-05-31").strip()
 
 # 품목 조건
 LARGE_CATEGORY_CODE = "06"  # 과실류
-MIDDLE_CATEGORY_CODE = "14"  # 감귤
+MIDDLE_CATEGORY_CODE = "15"  # 만감류 (한라봉, 천혜향, 레드향 등)
 
 # API 페이지 설정
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "1000"))
@@ -66,39 +66,39 @@ OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "output"))
 # ---------------------------------------------------------------------
 
 MARKETS: list[dict[str, str]] = [
-    #{"whsl_mrkt_cd": "110001", "whsl_mrkt_nm": "서울가락"},
-    #{"whsl_mrkt_cd": "110008", "whsl_mrkt_nm": "서울강서"},
-    #{"whsl_mrkt_cd": "210001", "whsl_mrkt_nm": "부산엄궁"},
-    #{"whsl_mrkt_cd": "210005", "whsl_mrkt_nm": "부산국제수산"}
-    #{"whsl_mrkt_cd": "210009", "whsl_mrkt_nm": "부산반여"}
-    #{"whsl_mrkt_cd": "220001", "whsl_mrkt_nm": "대구북부"},
-    #{"whsl_mrkt_cd": "230001", "whsl_mrkt_nm": "인천남촌"},
-    #{"whsl_mrkt_cd": "230003", "whsl_mrkt_nm": "인천삼산"}
+    {"whsl_mrkt_cd": "110001", "whsl_mrkt_nm": "서울가락"},
+    {"whsl_mrkt_cd": "110008", "whsl_mrkt_nm": "서울강서"},
+    {"whsl_mrkt_cd": "210001", "whsl_mrkt_nm": "부산엄궁"},
+    {"whsl_mrkt_cd": "210005", "whsl_mrkt_nm": "부산국제수산"},
+    {"whsl_mrkt_cd": "210009", "whsl_mrkt_nm": "부산반여"},
+    {"whsl_mrkt_cd": "220001", "whsl_mrkt_nm": "대구북부"},
+    {"whsl_mrkt_cd": "230001", "whsl_mrkt_nm": "인천남촌"},
+    {"whsl_mrkt_cd": "230003", "whsl_mrkt_nm": "인천삼산"},
      {"whsl_mrkt_cd": "240001", "whsl_mrkt_nm": "광주각화"},
      {"whsl_mrkt_cd": "240004", "whsl_mrkt_nm": "광주서부"},
      {"whsl_mrkt_cd": "250001", "whsl_mrkt_nm": "대전오정"},
      {"whsl_mrkt_cd": "250003", "whsl_mrkt_nm": "대전노은"},
-     {"whsl_mrkt_cd": "310101", "whsl_mrkt_nm": "수원"}
-    # {"whsl_mrkt_cd": "310401", "whsl_mrkt_nm": "안양"},
-    # {"whsl_mrkt_cd": "310901", "whsl_mrkt_nm": "안산"},
-    # {"whsl_mrkt_cd": "311201", "whsl_mrkt_nm": "구리"},
-    # {"whsl_mrkt_cd": "320101", "whsl_mrkt_nm": "춘천"},
-    # {"whsl_mrkt_cd": "320201", "whsl_mrkt_nm": "원주"},
-    # {"whsl_mrkt_cd": "320301", "whsl_mrkt_nm": "강릉"},
-    # {"whsl_mrkt_cd": "330101", "whsl_mrkt_nm": "청주"},
-    # {"whsl_mrkt_cd": "330201", "whsl_mrkt_nm": "충주"},
-    # {"whsl_mrkt_cd": "340101", "whsl_mrkt_nm": "천안"},
-    # {"whsl_mrkt_cd": "350101", "whsl_mrkt_nm": "전주"},
-    # {"whsl_mrkt_cd": "350301", "whsl_mrkt_nm": "익산"},
-    # {"whsl_mrkt_cd": "350402", "whsl_mrkt_nm": "정읍"},
-    # {"whsl_mrkt_cd": "360301", "whsl_mrkt_nm": "순천"},
-    # {"whsl_mrkt_cd": "370101", "whsl_mrkt_nm": "포항"},
-    # {"whsl_mrkt_cd": "370401", "whsl_mrkt_nm": "안동"},
-    # {"whsl_mrkt_cd": "371501", "whsl_mrkt_nm": "구미"},
-    # {"whsl_mrkt_cd": "380101", "whsl_mrkt_nm": "창원팔용"},
-    # {"whsl_mrkt_cd": "380201", "whsl_mrkt_nm": "울산"},
-    # {"whsl_mrkt_cd": "380303", "whsl_mrkt_nm": "창원내서"},
-    # {"whsl_mrkt_cd": "380401", "whsl_mrkt_nm": "진주"},
+     {"whsl_mrkt_cd": "310101", "whsl_mrkt_nm": "수원"},
+     {"whsl_mrkt_cd": "310401", "whsl_mrkt_nm": "안양"},
+     {"whsl_mrkt_cd": "310901", "whsl_mrkt_nm": "안산"},
+     {"whsl_mrkt_cd": "311201", "whsl_mrkt_nm": "구리"},
+     {"whsl_mrkt_cd": "320101", "whsl_mrkt_nm": "춘천"},
+     {"whsl_mrkt_cd": "320201", "whsl_mrkt_nm": "원주"},
+     {"whsl_mrkt_cd": "320301", "whsl_mrkt_nm": "강릉"},
+     {"whsl_mrkt_cd": "330101", "whsl_mrkt_nm": "청주"},
+     {"whsl_mrkt_cd": "330201", "whsl_mrkt_nm": "충주"},
+     {"whsl_mrkt_cd": "340101", "whsl_mrkt_nm": "천안"},
+     {"whsl_mrkt_cd": "350101", "whsl_mrkt_nm": "전주"},
+     {"whsl_mrkt_cd": "350301", "whsl_mrkt_nm": "익산"},
+     {"whsl_mrkt_cd": "350402", "whsl_mrkt_nm": "정읍"},
+     {"whsl_mrkt_cd": "360301", "whsl_mrkt_nm": "순천"},
+     {"whsl_mrkt_cd": "370101", "whsl_mrkt_nm": "포항"},
+     {"whsl_mrkt_cd": "370401", "whsl_mrkt_nm": "안동"},
+     {"whsl_mrkt_cd": "371501", "whsl_mrkt_nm": "구미"},
+     {"whsl_mrkt_cd": "380101", "whsl_mrkt_nm": "창원팔용"},
+     {"whsl_mrkt_cd": "380201", "whsl_mrkt_nm": "울산"},
+     {"whsl_mrkt_cd": "380303", "whsl_mrkt_nm": "창원내서"},
+     {"whsl_mrkt_cd": "380401", "whsl_mrkt_nm": "진주"}
 ]
 
 
@@ -203,7 +203,7 @@ def make_output_filename(
     range_end: date,
 ) -> str:
     return (
-        f"kat_sale_citrus3_"
+        f"mkat_sale_citrus_"
         f"{range_start.strftime('%Y%m%d')}_"
         f"{range_end.strftime('%Y%m%d')}.csv"
     )
