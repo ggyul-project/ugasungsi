@@ -38,8 +38,8 @@ API_OPERATION = os.getenv("API_OPERATION", "").strip()
 SERVICE_KEY = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
 
 # 조회 기간
-START_DATE = os.getenv("START_DATE", "2023-01-01").strip()
-END_DATE = os.getenv("END_DATE", "2023-05-31").strip()
+START_DATE = os.getenv("START_DATE", "2024-06-01").strip()
+END_DATE = os.getenv("END_DATE", "2024-08-31").strip()
 
 # 품목 조건
 LARGE_CATEGORY_CODE = "06"  # 과실류
