@@ -1,0 +1,30 @@
+{
+  "generated_on": "2026-11-19",
+  "history_last_date": "2026-11-11",
+  "market_count": 32,
+  "forecast_start_min": "2026-11-16",
+  "forecast_start_max": "2026-11-26",
+  "forecast_rows": 10696,
+  "validation_start": "2026-09-27",
+  "validation_end": "2026-11-11",
+  "volume_train_rows": 380568,
+  "price_train_rows": 269840,
+  "scores": {
+    "price": {
+      "MAE": 789.5877257526425,
+      "RMSE": 1201.9597632548166,
+      "MAPE": 37.09929794751232,
+      "R2": 0.49449218197110556,
+      "n": 7225,
+      "n_positive": 7223
+    },
+    "volume": {
+      "MAE": 0.6599169811540082,
+      "RMSE": 3.8296335403491564,
+      "MAPE": 85.89880841627433,
+      "R2": 0.7743521671260924,
+      "n": 8786,
+      "n_positive": 2094
+    }
+  }
+}
