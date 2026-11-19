@@ -6,3 +6,4 @@ holidays
 joblib
 plotly
 matplotlib
+seaborn
