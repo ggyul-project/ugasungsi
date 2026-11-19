@@ -1,0 +1,302 @@
+{
+  "조생귤": {
+    "variety_name": "조생귤",
+    "total_records": 268299,
+    "total_volume_ton": 451202.5,
+    "avg_price_won_kg": 2224.4,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "50내",
+      "소",
+      "40내",
+      "19개",
+      "대",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "5kg상자",
+      "10kg상자",
+      "5kg파렛트",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 1540.94,
+    "off_season_5pct_ton": 77.05,
+    "off_season_10pct_ton": 154.09
+  },
+  "한라봉": {
+    "variety_name": "한라봉",
+    "total_records": 290391,
+    "total_volume_ton": 95296.7,
+    "avg_price_won_kg": 5073.6,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "10개",
+      "9개",
+      "12개",
+      "11개",
+      "40내",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "9kg상자",
+      "5kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 559.94,
+    "off_season_5pct_ton": 28.0,
+    "off_season_10pct_ton": 55.99
+  },
+  "극조생감귤": {
+    "variety_name": "극조생감귤",
+    "total_records": 81372,
+    "total_volume_ton": 91081.8,
+    "avg_price_won_kg": 1708.9,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "50내",
+      "40내",
+      "소",
+      "19개",
+      "22개",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "5kg상자",
+      "10kg상자",
+      "5kg파렛트",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 638.18,
+    "off_season_5pct_ton": 31.91,
+    "off_season_10pct_ton": 63.82
+  },
+  "하우스감귤": {
+    "variety_name": "하우스감귤",
+    "total_records": 273234,
+    "total_volume_ton": 78327.9,
+    "avg_price_won_kg": 4701.5,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "40내",
+      "35내",
+      "45내",
+      "50내",
+      "30내",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "5kg상자",
+      "0.5kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 308.2,
+    "off_season_5pct_ton": 15.41,
+    "off_season_10pct_ton": 30.82
+  },
+  "비가림감귤": {
+    "variety_name": "비가림감귤",
+    "total_records": 55636,
+    "total_volume_ton": 33363.5,
+    "avg_price_won_kg": 3299.9,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "특대",
+      "50내",
+      "소",
+      "대",
+      "중",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "5kg상자",
+      "5kg파렛트",
+      "3kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 195.74,
+    "off_season_5pct_ton": 9.79,
+    "off_season_10pct_ton": 19.57
+  },
+  "천혜향": {
+    "variety_name": "천혜향",
+    "total_records": 93886,
+    "total_volume_ton": 30440.7,
+    "avg_price_won_kg": 4676.1,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "10개",
+      "12개",
+      "11개",
+      "13개",
+      "9개",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "9kg상자",
+      "5kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 372.0,
+    "off_season_5pct_ton": 18.6,
+    "off_season_10pct_ton": 37.2
+  },
+  "레드향": {
+    "variety_name": "레드향",
+    "total_records": 77560,
+    "total_volume_ton": 23788.8,
+    "avg_price_won_kg": 6641.7,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "12개",
+      "10개",
+      "13개",
+      "11개",
+      "14개",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "5kg상자",
+      "9kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 340.61,
+    "off_season_5pct_ton": 17.03,
+    "off_season_10pct_ton": 34.06
+  },
+  "타이벡감귤": {
+    "variety_name": "타이벡감귤",
+    "total_records": 14804,
+    "total_volume_ton": 13779.4,
+    "avg_price_won_kg": 3095.9,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "소",
+      "대",
+      "중",
+      "50내",
+      "특대",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "5kg상자",
+      "5kg파렛트",
+      "5kg기타",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 124.87,
+    "off_season_5pct_ton": 6.24,
+    "off_season_10pct_ton": 12.49
+  },
+  "황금향": {
+    "variety_name": "황금향",
+    "total_records": 16339,
+    "total_volume_ton": 3628.5,
+    "avg_price_won_kg": 3961.3,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "10개",
+      "13개",
+      "12개",
+      "11개",
+      "30내",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "5kg상자",
+      "9kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 30.01,
+    "off_season_5pct_ton": 1.5,
+    "off_season_10pct_ton": 3.0
+  },
+  "진지향": {
+    "variety_name": "진지향",
+    "total_records": 14918,
+    "total_volume_ton": 2609.3,
+    "avg_price_won_kg": 4731.0,
+    "grades": [
+      "특",
+      "상",
+      "중",
+      "하",
+      "전체"
+    ],
+    "top_5_sizes": [
+      "40내",
+      "50내",
+      "35내",
+      "30내",
+      "12개",
+      "전체"
+    ],
+    "top_3_boxes": [
+      "3kg상자",
+      "5kg상자",
+      "9kg상자",
+      "전체"
+    ],
+    "peak_5d_ma_ton": 16.24,
+    "off_season_5pct_ton": 0.81,
+    "off_season_10pct_ton": 1.62
+  }
+}
