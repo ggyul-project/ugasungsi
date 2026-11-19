@@ -202,3 +202,6 @@ test_save_cols = [COL_DATE, COL_MARKET, COL_VARIETY, COL_BOX, COL_VOLUME, '예�
 bundle = {'rf_vol_bu': rf_vol_bu, 'rf_vol_td': rf_vol_td, 'rf_price': rf_price, 'encoder': encoder, 'td_encoder': td_encoder, 'vol_features': vol_features, 'td_features': td_features, 'price_features': price_features, 'group_cols': group_cols, 'td_grp': td_grp, 't_stats': t_stats, 'td_yoil_med': td_yoil_med, 'yoy_stats': yoy_stats, 'typical_season_stats': typical_season_stats, 'test_results': test_orig[test_save_cols].copy(), 'recent_hist': recent_hist_df, 'recent_td': recent_td_df, 'cols': {'DATE': COL_DATE, 'MARKET': COL_MARKET, 'VARIETY': COL_VARIETY, 'BOX': COL_BOX, 'VOLUME': COL_VOLUME}}
 joblib.dump(bundle, 'citrus_rf_bundle.joblib', compress=3)
 print("\n✅ 완료! 등급·사이즈 통합 버전 'citrus_rf_bundle.joblib' 저장됨.")
+
+# 각 [도매시장, 품종, 포장단위]별 학습 시작일과 종료일 저장
+train_period_df = df_norm[is_train].groupby(group_cols, as_index=False)[COL_DATE].agg(학습시작일='min', 학습종료일='max')
