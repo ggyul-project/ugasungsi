@@ -340,8 +340,6 @@ with tab2:
         st.subheader("📋 전국 도매시장별 상세 비교표 (상자가 높은 순)")
         st.dataframe(comp_mkt_df, use_container_width=True, hide_index=True)
     st.markdown("---")
-    st.subheader(f"🎯 전체 도매시장별 모델 검증 정확도 ({var} > {box} | 최근 20% 테스트 기준)")
-    sub_all_test = test_results[(test_results[C['VARIETY']].astype(str) == var) & (test_results[C['BOX']].astype(str) == box)]
 
 with tab3:
     sub_test = test_results[
