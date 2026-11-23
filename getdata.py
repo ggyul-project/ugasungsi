@@ -43,7 +43,7 @@ END_DATE = os.getenv("END_DATE", "2026-11-22").strip()
 
 # 품목 조건
 LARGE_CATEGORY_CODE = "06"  # 과실류
-MIDDLE_CATEGORY_CODE = "15"  # 만감류 (한라봉, 천혜향, 레드향 등)
+MIDDLE_CATEGORY_CODE = "14"  # 만감류 (한라봉, 천혜향, 레드향 등)
 
 # API 페이지 설정
 PAGE_SIZE = int(os.getenv("PAGE_SIZE", "1000"))
@@ -203,7 +203,7 @@ def make_output_filename(
     range_end: date,
 ) -> str:
     return (
-        f"pkat_sale_citrus_"
+        f"pkat_sale_citrus2_"
         f"{range_start.strftime('%Y%m%d')}_"
         f"{range_end.strftime('%Y%m%d')}.csv"
     )
