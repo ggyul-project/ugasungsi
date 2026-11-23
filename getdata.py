@@ -38,8 +38,8 @@ API_OPERATION = os.getenv("API_OPERATION", "").strip()
 SERVICE_KEY = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
 
 # 조회 기간
-START_DATE = os.getenv("START_DATE", "2024-06-01").strip()
-END_DATE = os.getenv("END_DATE", "2024-08-31").strip()
+START_DATE = os.getenv("START_DATE", "2026-11-11").strip()
+END_DATE = os.getenv("END_DATE", "2026-11-22").strip()
 
 # 품목 조건
 LARGE_CATEGORY_CODE = "06"  # 과실류
@@ -203,7 +203,7 @@ def make_output_filename(
     range_end: date,
 ) -> str:
     return (
-        f"mkat_sale_citrus_"
+        f"pkat_sale_citrus_"
         f"{range_start.strftime('%Y%m%d')}_"
         f"{range_end.strftime('%Y%m%d')}.csv"
     )
