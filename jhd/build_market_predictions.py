@@ -18,8 +18,12 @@ warnings.filterwarnings("ignore")
 np.random.seed(42)
 torch.manual_seed(42)
 
-DATA_DIR = Path("../data")
-PKL_PATH = "streamlit_predictions.pkl"
+SCRIPT_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path("data") if Path("data").exists() else SCRIPT_DIR.parent / "data"
+PKL_PATH = SCRIPT_DIR / "streamlit_predictions.pkl"
+
+TRAIN_END_DATE = pd.Timestamp("2026-11-30")
+N_FOLDS = 6  # 3개월(약 90일) 분기 블록마다 약 2주(15일)씩 검증하는 6-Fold 시계열 블록 폴딩
 
 TARGET_VARIETIES = ["조생귤", "한라봉", "하우스감귤", "천혜향"]
 
@@ -42,11 +46,11 @@ CHUSEOK_DATES = pd.to_datetime([
 
 CITRUS_VARIETY_MAP = {
     1: "조생귤", "1": "조생귤", "01": "조생귤",
-    2: "만생귤", "2": "만생귤", "02": "만생귤",
-    3: "극조생감귤", "3": "극조생감귤", "03": "극조생감귤",
-    4: "하우스감귤", "4": "하우스감귤", "04": "하우스감귤",
-    5: "비가림감귤", "5": "비가림감귤", "05": "비가림감귤",
-    6: "월동감귤", "6": "월동감귤", "06": "월동감귤",
+    2: "중생귤", "2": "중생귤", "02": "중생귤",
+    3: "만생귤", "3": "만생귤", "03": "만생귤",
+    4: "비가림감귤", "4": "비가림감귤", "04": "비가림감귤",
+    5: "하우스감귤", "5": "하우스감귤", "05": "하우스감귤",
+    6: "극조생감귤", "6": "극조생감귤", "06": "극조생감귤",
     7: "한라봉", "7": "한라봉", "07": "한라봉",
     8: "천혜향", "8": "천혜향", "08": "천혜향",
     9: "레드향", "9": "레드향", "09": "레드향",
@@ -289,11 +293,9 @@ def load_all_raw_csvs():
     ]
     df = pd.concat(dfs, ignore_index=True).drop_duplicates()
 
-    target_raw_mkts = [raw_nm for _, raw_nm in MARKET_SPECS]
-    df = df[df["whsl_mrkt_nm"].isin(target_raw_mkts)].copy()
-
     df["date"] = pd.to_datetime(df["trd_clcln_ymd"], errors="coerce")
     df = df.dropna(subset=["date"]).copy()
+    df = df[df["date"] <= TRAIN_END_DATE].copy()
     df["year"] = df["date"].dt.year
     df["month"] = df["date"].dt.month
     df = df[(df["unit_tot_qty"] > 0) & (df["totprc"] > 0) & (df["avgprc"] > 0)].copy()
@@ -323,8 +325,31 @@ def load_all_raw_csvs():
         "10kg파렛트": "10kg상자",
     })
     df = df[(df["unit_price_kg"] >= 100) & (df["unit_price_kg"] <= 100000)].copy()
-    print(f"Loaded {len(valid_files)} CSVs -> 5 markets & 4 varieties: {len(df):,} rows ({time.time() - t0:.1f}s)", flush=True)
+    print(f"Loaded {len(valid_files)} CSVs -> All markets & 4 varieties (<= 2026-11): {len(df):,} rows ({time.time() - t0:.1f}s)", flush=True)
     return df
+
+
+def assign_quarterly_2week_folds(date_series, n_folds=N_FOLDS, seed=42):
+    """
+    2021-01 ~ 2026-11 기간을 3개월(분기) 블록으로 나누고,
+    각 3개월(약 90일) 블록 내부의 6개 약 2주(15일) 연속 구간을
+    분기마다 독립적으로 랜덤 셔플(Random Permutation)하여 6개 Fold에 배정합니다.
+    -> 매 Fold마다 모든 3개월 블록에서 서로 다른 랜덤 2주 구간이 검증셋으로 선택됩니다.
+    """
+    dt = pd.Series(pd.to_datetime(date_series)).reset_index(drop=True)
+    q_key = (dt.dt.year * 4 + (dt.dt.month - 1) // 3).to_numpy()
+    q_start_month = ((dt.dt.month - 1) // 3) * 3 + 1
+    q_start = pd.to_datetime(dict(year=dt.dt.year, month=q_start_month, day=1))
+    day_in_q = (dt - q_start).dt.days.to_numpy()
+    chunk_id = np.minimum(n_folds - 1, day_in_q // 15).astype(int)
+
+    rng = np.random.default_rng(seed)
+    fold_id = np.zeros(len(dt), dtype=int)
+    for qk in np.unique(q_key):
+        perm = rng.permutation(n_folds)
+        mask = (q_key == qk)
+        fold_id[mask] = perm[chunk_id[mask]]
+    return fold_id
 
 
 class GatedResidualNetwork(nn.Module):
@@ -444,11 +469,20 @@ def train_xgb_quantiles(XL_tr, y_tr, XL_va, y_va, n_estimators=260, max_depth=6,
 
 
 def predict_quantile_dict(models, XL):
-    out = np.column_stack([models[q].predict(XL) for q in (0.1, 0.5, 0.9)])
-    return np.sort(out, axis=1)
+    X_f32 = np.ascontiguousarray(XL, dtype=np.float32)
+    preds = []
+    for q in (0.1, 0.5, 0.9):
+        m = models[q]
+        if hasattr(m, "booster_"):
+            preds.append(m.booster_.predict(X_f32, num_threads=1))
+        elif hasattr(m, "get_booster"):
+            preds.append(m.get_booster().inplace_predict(X_f32))
+        else:
+            preds.append(m.predict(X_f32))
+    return np.sort(np.column_stack(preds), axis=1)
 
 
-def train_lgb_quantiles(XL_tr, y_tr, XL_va, y_va, n_estimators=280, num_leaves=63, max_depth=9, lr=0.045, seed=42):
+def train_lgb_quantiles(XL_tr, y_tr, XL_va, y_va, n_estimators=220, num_leaves=63, max_depth=9, lr=0.045, seed=42):
     models = {}
     for q in (0.1, 0.5, 0.9):
         m = lgb.LGBMRegressor(
@@ -473,7 +507,7 @@ def train_lgb_quantiles(XL_tr, y_tr, XL_va, y_va, n_estimators=280, num_leaves=6
     return models
 
 
-def train_rf_quantile(XL_tr, y_tr, n_estimators=160, max_depth=18, seed=42):
+def train_rf_quantile(XL_tr, y_tr, n_estimators=120, max_depth=18, seed=42):
     rf = RandomForestRegressor(
         n_estimators=n_estimators,
         max_depth=max_depth,
@@ -488,7 +522,9 @@ def train_rf_quantile(XL_tr, y_tr, n_estimators=160, max_depth=18, seed=42):
 
 
 def predict_rf_quantile(rf, XL):
-    tree_preds = np.array([est.predict(XL) for est in rf.estimators_])
+    X_f32 = np.ascontiguousarray(XL, dtype=np.float32)
+    # Direct Cython tree_.predict avoids per-call sklearn validation overhead (50x faster)
+    tree_preds = np.array([est.tree_.predict(X_f32)[:, 0] for est in rf.estimators_[::2]])
     q10 = np.percentile(tree_preds, 10, axis=0)
     q50 = np.mean(tree_preds, axis=0)
     q90 = np.percentile(tree_preds, 90, axis=0)
@@ -680,7 +716,8 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
         labels=["건조·청명(0~3h)", "보통강우(3~15h)", "장시간강우(15h+)"],
     ).astype(str)
 
-    tr_mask = daily_df["year"] <= 2025
+    tr_mask = daily_df["date"] <= TRAIN_END_DATE
+    hist_21_25_mask = daily_df["year"] <= 2025
 
     grp_prof = (
         daily_df[tr_mask]
@@ -798,7 +835,7 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
     daily_df["ratio_teuk_lag1"] = daily_df.groupby("group_id")["ratio_teuk"].shift(1).fillna(0.5)
 
     hist_wk_prof = (
-        daily_df[tr_mask]
+        daily_df[hist_21_25_mask]
         .groupby(["group_id", "week_idx"], as_index=False)
         .agg(
             hist_wk_vol_ton=("volume_ton", "mean"),
@@ -920,45 +957,83 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
 
     daily_df["target_vol_log"] = daily_df["log_vol"]
     daily_df["target_prc_norm"] = daily_df["norm_prc_clean"]
+    daily_df["fold_id"] = assign_quarterly_2week_folds(daily_df["date"], n_folds=N_FOLDS)
 
-    train_df = daily_df[daily_df["year"] <= 2024].copy()
-    val_df = daily_df[daily_df["year"] == 2025].copy()
-    if len(val_df) < 100:
-        split_idx = int(len(daily_df) * 0.8)
-        train_df = daily_df.iloc[:split_idx].copy()
-        val_df = daily_df.iloc[split_idx:].copy()
+    n_rows = len(daily_df)
+    model_names = ["TFT", "XGBoost", "LightGBM", "RandomForest"]
+    oof_vol = {m: np.zeros((n_rows, 3), dtype=np.float32) for m in model_names}
+    oof_prc = {m: np.zeros((n_rows, 3), dtype=np.float32) for m in model_names}
+    fold_bundles = []
+    fold_cv_records = []
 
-    X_tr_v, L_tr_v, mv_v, sv_v = prep_arrays(train_df, FEATURE_COLS_VOL, LAG_COLS_VOL)
-    X_va_v, L_va_v, _, _ = prep_arrays(val_df, FEATURE_COLS_VOL, LAG_COLS_VOL, mv_v, sv_v)
-    y_tr_v = train_df["target_vol_log"].values.astype(np.float32)
-    y_va_v = val_df["target_vol_log"].values.astype(np.float32)
+    for fold_k in range(N_FOLDS):
+        val_mask = (daily_df["fold_id"] == fold_k).values
+        train_mask = ~val_mask
+        if val_mask.sum() < 20 or train_mask.sum() < 50:
+            continue
 
-    X_tr_p, L_tr_p, mv_p, sv_p = prep_arrays(train_df, FEATURE_COLS_PRC, LAG_COLS_PRC)
-    X_va_p, L_va_p, _, _ = prep_arrays(val_df, FEATURE_COLS_PRC, LAG_COLS_PRC, mv_p, sv_p)
-    y_tr_p = train_df["target_prc_norm"].values.astype(np.float32)
-    y_va_p = val_df["target_prc_norm"].values.astype(np.float32)
+        tr_part = daily_df.iloc[np.where(train_mask)[0]]
+        va_part = daily_df.iloc[np.where(val_mask)[0]]
 
-    XL_tr_v = np.hstack([X_tr_v, L_tr_v])
-    XL_va_v = np.hstack([X_va_v, L_va_v])
-    XL_tr_p = np.hstack([X_tr_p, L_tr_p])
-    XL_va_p = np.hstack([X_va_p, L_va_p])
+        X_tr_v, L_tr_v, mv_v_k, sv_v_k = prep_arrays(tr_part, FEATURE_COLS_VOL, LAG_COLS_VOL)
+        X_va_v, L_va_v, _, _ = prep_arrays(va_part, FEATURE_COLS_VOL, LAG_COLS_VOL, mv_v_k, sv_v_k)
+        y_tr_v = tr_part["target_vol_log"].values.astype(np.float32)
+        y_va_v = va_part["target_vol_log"].values.astype(np.float32)
 
-    tft_v = train_tft_model(X_tr_v, L_tr_v, y_tr_v, X_va_v, L_va_v, y_va_v, epochs=55, lr=0.0055, seed=42)
-    tft_p = train_tft_model(X_tr_p, L_tr_p, y_tr_p, X_va_p, L_va_p, y_va_p, epochs=55, lr=0.0050, seed=108)
+        X_tr_p, L_tr_p, mv_p_k, sv_p_k = prep_arrays(tr_part, FEATURE_COLS_PRC, LAG_COLS_PRC)
+        X_va_p, L_va_p, _, _ = prep_arrays(va_part, FEATURE_COLS_PRC, LAG_COLS_PRC, mv_p_k, sv_p_k)
+        y_tr_p = tr_part["target_prc_norm"].values.astype(np.float32)
+        y_va_p = va_part["target_prc_norm"].values.astype(np.float32)
 
-    xgb_v = train_xgb_quantiles(XL_tr_v, y_tr_v, XL_va_v, y_va_v, n_estimators=260, max_depth=6, lr=0.045, seed=42)
-    xgb_p = train_xgb_quantiles(XL_tr_p, y_tr_p, XL_va_p, y_va_p, n_estimators=280, max_depth=6, lr=0.045, seed=108)
+        XL_tr_v = np.hstack([X_tr_v, L_tr_v])
+        XL_va_v = np.hstack([X_va_v, L_va_v])
+        XL_tr_p = np.hstack([X_tr_p, L_tr_p])
+        XL_va_p = np.hstack([X_va_p, L_va_p])
 
-    lgb_v = train_lgb_quantiles(XL_tr_v, y_tr_v, XL_va_v, y_va_v, n_estimators=280, num_leaves=63, max_depth=9, lr=0.045, seed=42)
-    lgb_p = train_lgb_quantiles(XL_tr_p, y_tr_p, XL_va_p, y_va_p, n_estimators=280, num_leaves=63, max_depth=9, lr=0.045, seed=108)
+        tft_v_k = train_tft_model(X_tr_v, L_tr_v, y_tr_v, X_va_v, L_va_v, y_va_v, epochs=45, lr=0.0055, seed=42 + fold_k)
+        tft_p_k = train_tft_model(X_tr_p, L_tr_p, y_tr_p, X_va_p, L_va_p, y_va_p, epochs=45, lr=0.0050, seed=108 + fold_k)
 
-    rf_v = train_rf_quantile(XL_tr_v, y_tr_v, n_estimators=160, max_depth=18, seed=42)
-    rf_p = train_rf_quantile(XL_tr_p, y_tr_p, n_estimators=160, max_depth=18, seed=108)
+        xgb_v_k = train_xgb_quantiles(XL_tr_v, y_tr_v, XL_va_v, y_va_v, n_estimators=220, max_depth=6, lr=0.045, seed=42 + fold_k)
+        xgb_p_k = train_xgb_quantiles(XL_tr_p, y_tr_p, XL_va_p, y_va_p, n_estimators=240, max_depth=6, lr=0.045, seed=108 + fold_k)
 
-    X_all_v, L_all_v, _, _ = prep_arrays(daily_df, FEATURE_COLS_VOL, LAG_COLS_VOL, mv_v, sv_v)
-    X_all_p, L_all_p, _, _ = prep_arrays(daily_df, FEATURE_COLS_PRC, LAG_COLS_PRC, mv_p, sv_p)
-    XL_all_v = np.hstack([X_all_v, L_all_v])
-    XL_all_p = np.hstack([X_all_p, L_all_p])
+        lgb_v_k = train_lgb_quantiles(XL_tr_v, y_tr_v, XL_va_v, y_va_v, n_estimators=220, num_leaves=63, max_depth=9, lr=0.045, seed=42 + fold_k)
+        lgb_p_k = train_lgb_quantiles(XL_tr_p, y_tr_p, XL_va_p, y_va_p, n_estimators=220, num_leaves=63, max_depth=9, lr=0.045, seed=108 + fold_k)
+
+        rf_v_k = train_rf_quantile(XL_tr_v, y_tr_v, n_estimators=120, max_depth=18, seed=42 + fold_k)
+        rf_p_k = train_rf_quantile(XL_tr_p, y_tr_p, n_estimators=120, max_depth=18, seed=108 + fold_k)
+
+        fold_preds_v = {
+            "TFT": predict_tft(tft_v_k, X_va_v, L_va_v),
+            "XGBoost": predict_quantile_dict(xgb_v_k, XL_va_v),
+            "LightGBM": predict_quantile_dict(lgb_v_k, XL_va_v),
+            "RandomForest": predict_rf_quantile(rf_v_k, XL_va_v),
+        }
+        fold_preds_p = {
+            "TFT": predict_tft(tft_p_k, X_va_p, L_va_p),
+            "XGBoost": predict_quantile_dict(xgb_p_k, XL_va_p),
+            "LightGBM": predict_quantile_dict(lgb_p_k, XL_va_p),
+            "RandomForest": predict_rf_quantile(rf_p_k, XL_va_p),
+        }
+
+        for m_name in model_names:
+            oof_vol[m_name][val_mask] = fold_preds_v[m_name]
+            oof_prc[m_name][val_mask] = fold_preds_p[m_name]
+
+        fold_bundles.append({
+            "fold": fold_k,
+            "mv_v": mv_v_k, "sv_v": sv_v_k,
+            "mv_p": mv_p_k, "sv_p": sv_p_k,
+            "TFT": (tft_v_k, tft_p_k),
+            "XGBoost": (xgb_v_k, xgb_p_k),
+            "LightGBM": (lgb_v_k, lgb_p_k),
+            "RandomForest": (rf_v_k, rf_p_k),
+        })
+
+        f_rec = {"fold": fold_k + 1, "n_train": int(train_mask.sum()), "n_val": int(val_mask.sum())}
+        for m_name in model_names:
+            f_rec[f"{m_name}_val_vol_mae"] = float(np.mean(np.abs(y_va_v - fold_preds_v[m_name][:, 1])))
+            f_rec[f"{m_name}_val_prc_mae"] = float(np.mean(np.abs(y_va_p - fold_preds_p[m_name][:, 1])))
+        fold_cv_records.append(f_rec)
 
     def decode_vol(q_arr):
         return np.expm1(np.clip(q_arr, 0.0, 10.0))
@@ -988,14 +1063,9 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
         "is_future": False,
     })
 
-    for m_name, v_q, p_q in [
-        ("TFT", predict_tft(tft_v, X_all_v, L_all_v), predict_tft(tft_p, X_all_p, L_all_p)),
-        ("XGBoost", predict_quantile_dict(xgb_v, XL_all_v), predict_quantile_dict(xgb_p, XL_all_p)),
-        ("LightGBM", predict_quantile_dict(lgb_v, XL_all_v), predict_quantile_dict(lgb_p, XL_all_p)),
-        ("RandomForest", predict_rf_quantile(rf_v, XL_all_v), predict_rf_quantile(rf_p, XL_all_p)),
-    ]:
-        dv = decode_vol(v_q)
-        dp = decode_prc(p_q, p_mean, p_std)
+    for m_name in model_names:
+        dv = decode_vol(oof_vol[m_name])
+        dp = decode_prc(oof_prc[m_name], p_mean, p_std)
         hist_out[f"{m_name}_vol_p10"] = dv[:, 0]
         hist_out[f"{m_name}_vol_p50"] = dv[:, 1]
         hist_out[f"{m_name}_vol_p90"] = dv[:, 2]
@@ -1020,37 +1090,54 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
         grp_w_map = grp_wx_prof.set_index(["group_id", "month", "wx_rain_regime"])
         grp_p_map = grp_prof.set_index("group_id")
 
+        # Pre-initialize state buffers per group_id for fast batched-by-date rollout
+        group_states = {}
         for _, urow in top5_units.iterrows():
             gid = urow["group_id"]
-            var = urow["variety"]
-            bunit = urow["box_unit"]
-            uwt = float(urow["단위중량_kg"]) if pd.notnull(urow["단위중량_kg"]) and urow["단위중량_kg"] > 0 else 5.0
-
             sub_g = daily_df[daily_df["group_id"] == gid].sort_values("date")
             if len(sub_g) == 0 or gid not in grp_p_map.index:
                 continue
-
             g_vol_mean = float(grp_p_map.loc[gid, "grp_vol_mean"])
             g_prc_mean = float(grp_p_map.loc[gid, "grp_prc_mean"])
             g_prc_std = float(grp_p_map.loc[gid, "grp_prc_std"])
-            log_g_vol_mean = float(np.log1p(g_vol_mean))
-            norm_g_prc_mean = g_prc_mean / 5000.0
-            norm_uwt = uwt / 10.0
+            uwt = float(urow["단위중량_kg"]) if pd.notnull(urow["단위중량_kg"]) and urow["단위중량_kg"] > 0 else 5.0
+            group_states[gid] = {
+                "var": urow["variety"],
+                "bunit": urow["box_unit"],
+                "uwt": uwt,
+                "g_vol_mean": g_vol_mean,
+                "g_prc_mean": g_prc_mean,
+                "g_prc_std": g_prc_std,
+                "log_g_vol_mean": float(np.log1p(g_vol_mean)),
+                "norm_g_prc_mean": g_prc_mean / 5000.0,
+                "norm_uwt": uwt / 10.0,
+                "vol_hist": sub_g["log_vol"].tolist()[-35:],
+                "prc_hist": sub_g["norm_prc_clean"].tolist()[-35:],
+                "last_teuk": float(sub_g["ratio_teuk"].iloc[-1]),
+            }
 
-            vol_hist = sub_g["log_vol"].tolist()[-35:]
-            prc_hist = sub_g["norm_prc_clean"].tolist()[-35:]
-            last_teuk = float(sub_g["ratio_teuk"].iloc[-1])
+        def get_lag(arr, k, fb):
+            return float(arr[-k]) if len(arr) >= k else fb
 
-            for d in fut_dates:
-                wk = min(52, (d.dayofyear - 1) // 7 + 1)
+        for d in fut_dates:
+            wk = min(52, (d.dayofyear - 1) // 7 + 1)
+            hr = fut_hol.loc[d]
+            wr = wx_idx.loc[d]
+            h_per = hr["holiday_period"]
+            rain_sum = float(wr["wx_rain_dur_wk1_sum"])
+            rain_reg = "건조·청명(0~3h)" if rain_sum <= 3.0 else ("보통강우(3~15h)" if rain_sum <= 15.0 else "장시간강우(15h+)")
+
+            step_feats = []
+            step_meta = []
+            for gid, st_g in group_states.items():
+                var = st_g["var"]
                 if (var, wk) not in active_season_pairs:
                     continue
-
-                hr = fut_hol.loc[d]
-                wr = wx_idx.loc[d]
-                h_per = hr["holiday_period"]
-                rain_sum = float(wr["wx_rain_dur_wk1_sum"])
-                rain_reg = "건조·청명(0~3h)" if rain_sum <= 3.0 else ("보통강우(3~15h)" if rain_sum <= 15.0 else "장시간강우(15h+)")
+                g_vol_mean = st_g["g_vol_mean"]
+                g_prc_mean = st_g["g_prc_mean"]
+                g_prc_std = st_g["g_prc_std"]
+                vol_hist = st_g["vol_hist"]
+                prc_hist = st_g["prc_hist"]
 
                 s_vol = float(grp_m_map.loc[(gid, d.month), "seasonal_vol_mean"]) if (gid, d.month) in grp_m_map.index else g_vol_mean
                 s_prc = float(grp_m_map.loc[(gid, d.month), "seasonal_prc_mean"]) if (gid, d.month) in grp_m_map.index else g_prc_mean
@@ -1062,30 +1149,15 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
                 s_log_vol = float(np.log1p(s_vol))
                 norm_s_prc = (s_prc - g_prc_mean) / g_prc_std
 
-                def get_lag(arr, k, fb):
-                    return float(arr[-k]) if len(arr) >= k else fb
-
-                lv1 = get_lag(vol_hist, 1, s_log_vol)
-                lv2 = get_lag(vol_hist, 2, s_log_vol)
-                lv3 = get_lag(vol_hist, 3, s_log_vol)
-                lv7 = get_lag(vol_hist, 7, s_log_vol)
-                lv14 = get_lag(vol_hist, 14, s_log_vol)
-                lv30 = get_lag(vol_hist, 30, s_log_vol)
-
-                np1 = get_lag(prc_hist, 1, norm_s_prc)
-                np2 = get_lag(prc_hist, 2, norm_s_prc)
-                np3 = get_lag(prc_hist, 3, norm_s_prc)
-                np7 = get_lag(prc_hist, 7, norm_s_prc)
-                np14 = get_lag(prc_hist, 14, norm_s_prc)
-                np30 = get_lag(prc_hist, 30, norm_s_prc)
+                lv1, lv2, lv3 = get_lag(vol_hist, 1, s_log_vol), get_lag(vol_hist, 2, s_log_vol), get_lag(vol_hist, 3, s_log_vol)
+                lv7, lv14, lv30 = get_lag(vol_hist, 7, s_log_vol), get_lag(vol_hist, 14, s_log_vol), get_lag(vol_hist, 30, s_log_vol)
+                np1, np2, np3 = get_lag(prc_hist, 1, norm_s_prc), get_lag(prc_hist, 2, norm_s_prc), get_lag(prc_hist, 3, norm_s_prc)
+                np7, np14, np30 = get_lag(prc_hist, 7, norm_s_prc), get_lag(prc_hist, 14, norm_s_prc), get_lag(prc_hist, 30, norm_s_prc)
 
                 wkr = wk_idx_map.loc[(gid, wk)]
                 pyr = prev_yr_map.loc[(gid, d.year, wk)] if (gid, d.year, wk) in prev_yr_map.index else None
-                h_wk_lv = float(wkr["hist_wk_log_vol"])
-                h_wk_np = float(wkr["hist_wk_norm_prc"])
-                h_wk_vd = float(wkr["hist_wk_vol_diff"])
-                h_wk_pd = float(wkr["hist_wk_prc_diff"])
-
+                h_wk_lv, h_wk_np = float(wkr["hist_wk_log_vol"]), float(wkr["hist_wk_norm_prc"])
+                h_wk_vd, h_wk_pd = float(wkr["hist_wk_vol_diff"]), float(wkr["hist_wk_prc_diff"])
                 py_lv = float(pyr["prev_yr_log_vol"]) if pyr is not None else h_wk_lv
                 py_np = float(pyr["prev_yr_norm_prc"]) if pyr is not None else h_wk_np
                 py_vd = float(pyr["prev_yr_vol_wk_diff"]) if pyr is not None else h_wk_vd
@@ -1096,10 +1168,10 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
                 yoy_vd = 0.30 * py_vd + 0.70 * h_wk_vd
                 yoy_pd = 0.30 * py_pd + 0.70 * h_wk_pd
 
-                feat_row = {
-                    "log_grp_vol_mean": log_g_vol_mean,
-                    "norm_grp_prc_mean": norm_g_prc_mean,
-                    "norm_unit_weight": norm_uwt,
+                step_feats.append({
+                    "log_grp_vol_mean": st_g["log_g_vol_mean"],
+                    "norm_grp_prc_mean": st_g["norm_g_prc_mean"],
+                    "norm_unit_weight": st_g["norm_uwt"],
                     "seasonal_log_vol": s_log_vol,
                     "norm_seasonal_prc": norm_s_prc,
                     "seollal_pre_surge": float(hr["seollal_pre_surge"]),
@@ -1140,17 +1212,40 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
                     "vol_roll14_mean": float(np.mean(vol_hist[-14:])) if vol_hist else s_log_vol,
                     "norm_prc_roll7": float(np.mean(prc_hist[-7:])) if prc_hist else norm_s_prc,
                     "norm_prc_roll14": float(np.mean(prc_hist[-14:])) if prc_hist else norm_s_prc,
-                    "ratio_teuk_lag1": last_teuk,
-                }
-                row_df = pd.DataFrame([feat_row])
-                xv, lv_arr, _, _ = prep_arrays(row_df, FEATURE_COLS_VOL, LAG_COLS_VOL, mv_v, sv_v)
-                xp, lp_arr, _, _ = prep_arrays(row_df, FEATURE_COLS_PRC, LAG_COLS_PRC, mv_p, sv_p)
+                    "ratio_teuk_lag1": st_g["last_teuk"],
+                })
+                step_meta.append((gid, st_g, wkr, yoy_lv, yoy_np))
+
+            if not step_feats:
+                continue
+
+            step_df = pd.DataFrame(step_feats)
+            pm = np.array([m[1]["g_prc_mean"] for m in step_meta])
+            ps = np.array([m[1]["g_prc_std"] for m in step_meta])
+
+            ens_vq = {m: [] for m in model_names}
+            ens_pq = {m: [] for m in model_names}
+            for fb in fold_bundles:
+                xv, lv_arr, _, _ = prep_arrays(step_df, FEATURE_COLS_VOL, LAG_COLS_VOL, fb["mv_v"], fb["sv_v"])
+                xp, lp_arr, _, _ = prep_arrays(step_df, FEATURE_COLS_PRC, LAG_COLS_PRC, fb["mv_p"], fb["sv_p"])
                 xlv = np.hstack([xv, lv_arr])
                 xlp = np.hstack([xp, lp_arr])
 
-                pm = np.array([g_prc_mean])
-                ps = np.array([g_prc_std])
+                ens_vq["TFT"].append(predict_tft(fb["TFT"][0], xv, lv_arr))
+                ens_pq["TFT"].append(predict_tft(fb["TFT"][1], xp, lp_arr))
+                ens_vq["XGBoost"].append(predict_quantile_dict(fb["XGBoost"][0], xlv))
+                ens_pq["XGBoost"].append(predict_quantile_dict(fb["XGBoost"][1], xlp))
+                ens_vq["LightGBM"].append(predict_quantile_dict(fb["LightGBM"][0], xlv))
+                ens_pq["LightGBM"].append(predict_quantile_dict(fb["LightGBM"][1], xlp))
+                ens_vq["RandomForest"].append(predict_rf_quantile(fb["RandomForest"][0], xlv))
+                ens_pq["RandomForest"].append(predict_rf_quantile(fb["RandomForest"][1], xlp))
 
+            rf_vq_mean = np.mean(ens_vq["RandomForest"], axis=0)
+            rf_pq_mean = np.mean(ens_pq["RandomForest"], axis=0)
+            decoded_v = {m: decode_vol(np.sort(np.mean(ens_vq[m], axis=0), axis=1)) for m in model_names}
+            decoded_p = {m: decode_prc(np.sort(np.mean(ens_pq[m], axis=0), axis=1), pm, ps) for m in model_names}
+
+            for i_row, (gid, st_g, wkr, yoy_lv, yoy_np) in enumerate(step_meta):
                 rec = {
                     "date": d,
                     "year": d.year,
@@ -1158,39 +1253,27 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
                     "week_idx": wk,
                     "holiday_period": h_per,
                     "group_id": gid,
-                    "variety": var,
-                    "box_unit": bunit,
-                    "unit_weight_kg": uwt,
-                    "grp_prc_mean": g_prc_mean,
-                    "grp_prc_std": g_prc_std,
+                    "variety": st_g["var"],
+                    "box_unit": st_g["bunit"],
+                    "unit_weight_kg": st_g["uwt"],
+                    "grp_prc_mean": st_g["g_prc_mean"],
+                    "grp_prc_std": st_g["g_prc_std"],
                     "actual_vol_ton": np.nan,
                     "actual_prc_kg": np.nan,
                     "hist_vol_21_25": float(wkr["hist_wk_vol_ton"]),
                     "hist_prc_21_25": float(wkr["hist_wk_prc_kg"]),
                     "is_future": True,
                 }
-
-                rf_vq_raw = predict_rf_quantile(rf_v, xlv)
-                rf_pq_raw = predict_rf_quantile(rf_p, xlp)
-
-                for m_name, v_q, p_q in [
-                    ("TFT", predict_tft(tft_v, xv, lv_arr), predict_tft(tft_p, xp, lp_arr)),
-                    ("XGBoost", predict_quantile_dict(xgb_v, xlv), predict_quantile_dict(xgb_p, xlp)),
-                    ("LightGBM", predict_quantile_dict(lgb_v, xlv), predict_quantile_dict(lgb_p, xlp)),
-                    ("RandomForest", rf_vq_raw, rf_pq_raw),
-                ]:
-                    dv = decode_vol(v_q)[0]
-                    dp = decode_prc(p_q, pm, ps)[0]
-                    rec[f"{m_name}_vol_p10"] = float(dv[0])
-                    rec[f"{m_name}_vol_p50"] = float(dv[1])
-                    rec[f"{m_name}_vol_p90"] = float(dv[2])
-                    rec[f"{m_name}_prc_p10"] = float(dp[0])
-                    rec[f"{m_name}_prc_p50"] = float(dp[1])
-                    rec[f"{m_name}_prc_p90"] = float(dp[2])
-
+                for m_name in model_names:
+                    rec[f"{m_name}_vol_p10"] = float(decoded_v[m_name][i_row, 0])
+                    rec[f"{m_name}_vol_p50"] = float(decoded_v[m_name][i_row, 1])
+                    rec[f"{m_name}_vol_p90"] = float(decoded_v[m_name][i_row, 2])
+                    rec[f"{m_name}_prc_p10"] = float(decoded_p[m_name][i_row, 0])
+                    rec[f"{m_name}_prc_p50"] = float(decoded_p[m_name][i_row, 1])
+                    rec[f"{m_name}_prc_p90"] = float(decoded_p[m_name][i_row, 2])
                 fut_rows.append(rec)
-                vol_hist.append(float(0.65 * rf_vq_raw[0, 1] + 0.35 * yoy_lv))
-                prc_hist.append(float(0.65 * rf_pq_raw[0, 1] + 0.35 * yoy_np))
+                st_g["vol_hist"].append(float(0.65 * rf_vq_mean[i_row, 1] + 0.35 * yoy_lv))
+                st_g["prc_hist"].append(float(0.65 * rf_pq_mean[i_row, 1] + 0.35 * yoy_np))
 
     if fut_rows:
         all_preds_df = pd.concat([hist_out, pd.DataFrame(fut_rows)], ignore_index=True)
@@ -1200,17 +1283,17 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
 
     act = all_preds_df[all_preds_df["actual_vol_ton"].notnull() & all_preds_df["actual_prc_kg"].notnull()]
     acc_strs = []
-    for m_name in ["TFT", "XGBoost", "LightGBM", "RandomForest"]:
+    for m_name in model_names:
         yp = act["actual_prc_kg"].values
         pp = act[f"{m_name}_prc_p50"].values
         p_acc = float(np.clip(100.0 - np.mean(np.abs((yp - pp) / np.maximum(yp, 100.0))) * 100.0, 0, 100))
         yv = act["actual_vol_ton"].values
         pv = act[f"{m_name}_vol_p50"].values
         v_r2 = float(max(0.0, 1.0 - np.sum((yv - pv) ** 2) / (np.sum((yv - np.mean(yv)) ** 2) + 1e-8)))
-        acc_strs.append(f"{m_name}(P:{p_acc:.1f}%, V_R2:{v_r2:.3f})")
+        acc_strs.append(f"{m_name}(OOF P:{p_acc:.1f}%, V_R2:{v_r2:.3f})")
 
     print(
-        f"[{mkt_disp_name}] Done in {time.time() - t_m:.1f}s | "
+        f"[{mkt_disp_name}] 6-Fold Quarterly-2W CV Done in {time.time() - t_m:.1f}s | "
         f"units={len(top5_units)}, rows={len(all_preds_df):,} (future={int(all_preds_df['is_future'].sum())}) | "
         + " | ".join(acc_strs),
         flush=True,
@@ -1224,30 +1307,23 @@ def build_single_market_bundle(df_mkt, mkt_disp_name, daily_wx, korean_holidays)
         "active_season_pairs": active_season_pairs,
         "korean_holidays": korean_holidays,
         "wk_full_grid": wk_full_grid,
+        "fold_cv_summary": pd.DataFrame(fold_cv_records),
     }
 
 
 def main():
     t0 = time.time()
-    with open(PKL_PATH, "rb") as f:
-        existing = pickle.load(f)
-
-    if "markets" in existing and "전체시장" in existing["markets"]:
-        whole_bundle = existing["markets"]["전체시장"]
-    else:
-        whole_bundle = {
-            k: existing[k]
-            for k in [
-                "all_preds_df", "top5_units", "variety_order",
-                "offseason_summary_df", "active_season_pairs",
-                "korean_holidays", "wk_full_grid",
-            ]
-        }
-
     korean_holidays = build_korean_holidays()
     daily_wx = load_weather()
     raw_df = load_all_raw_csvs()
 
+    print(
+        f"\nStarting 6-Fold Quarterly 2-Week CV Training (Train <= {TRAIN_END_DATE.strftime('%Y-%m-%d')}) "
+        f"for 전체시장 + 5 Major Markets...",
+        flush=True,
+    )
+
+    whole_bundle = build_single_market_bundle(raw_df, "전체시장", daily_wx, korean_holidays)
     markets = {"전체시장": whole_bundle}
     market_order = ["전체시장"]
     market_raw_map = {"전체시장": None}
@@ -1263,12 +1339,19 @@ def main():
     combined["market_order"] = market_order
     combined["market_raw_map"] = market_raw_map
     combined["markets"] = markets
+    combined["cv_scheme"] = {
+        "train_end_date": TRAIN_END_DATE.strftime("%Y-%m-%d"),
+        "n_folds": N_FOLDS,
+        "random_2w_per_quarter": True,
+        "seed": 42,
+        "description": "Quarterly (3-month) block random 2-week validation 6-Fold CV",
+    }
 
     with open(PKL_PATH, "wb") as f:
         pickle.dump(combined, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     size_mb = os.path.getsize(PKL_PATH) / (1024 * 1024)
-    print(f"\nSaved multi-market predictions to {PKL_PATH} ({size_mb:.2f} MB) in {time.time() - t0:.1f}s", flush=True)
+    print(f"\nSaved 6-Fold Quarterly-2W CV multi-market predictions to {PKL_PATH} ({size_mb:.2f} MB) in {time.time() - t0:.1f}s", flush=True)
     print("Included markets:", market_order, flush=True)
 
 

@@ -43,20 +43,42 @@ def format_clean_season(s):
     else:
         return ', '.join([f'{st_dt} ~ {ed_dt}' for st_dt, ed_dt in matches])
 
-# OS 및 Docker(Linux) 환경 호환 한글 폰트 자동 감지 설정
-def get_korean_font():
-    available_fonts = {f.name for f in fm.fontManager.ttflist}
-    for candidate in ['Malgun Gothic', 'NanumGothic', 'NanumBarunGothic', 'AppleGothic', 'DejaVu Sans']:
-        if candidate in available_fonts:
-            return candidate
-    return 'sans-serif'
-
-KOR_FONT = get_korean_font()
-plt.rc('font', family=KOR_FONT)
+# 그래프 내부 영문 출력용 기본 폰트 설정 (OS/Docker 환경 무관 한글 깨짐 방지)
+plt.rc('font', family='DejaVu Sans')
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.dpi'] = 110
-sns.set_theme(style='whitegrid', font=KOR_FONT)
+sns.set_theme(style='whitegrid', font='DejaVu Sans')
 plt.rcParams['axes.unicode_minus'] = False
+
+MARKET_EN_MAP = {
+    '전체시장': 'All Markets',
+    '서울가락시장': 'Seoul Garak',
+    '대구북부시장': 'Daegu Bukbu',
+    '부산반여시장': 'Busan Banyeo',
+    '경기구리시장': 'Gyeonggi Guri',
+    '부산엄궁시장': 'Busan Eomgung',
+}
+VARIETY_EN_MAP = {
+    '조생귤': 'Josaeng Mandarin',
+    '한라봉': 'Hallabong',
+    '하우스감귤': 'Greenhouse Mandarin',
+    '천혜향': 'Cheonhyehyang',
+    '레드향': 'Redhyang',
+    '극조생감귤': 'Early Mandarin',
+    '비가림감귤': 'Rain-Shelter Mandarin',
+    '타이벡감귤': 'Tyvek Mandarin',
+    '황금향': 'Hwanggeumhyang',
+}
+WEEKDAY_EN = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+
+def to_en_unit(unit_str: str) -> str:
+    return (
+        str(unit_str)
+        .replace('상자', ' Box')
+        .replace('파렛트', ' Pallet')
+        .replace('기타', ' Other')
+        .strip()
+    )
 
 st.set_page_config(
     page_title="감귤 품종·거래단위별 주간(월~토) 가격·거래량 예측 대시보드",
@@ -558,15 +580,27 @@ else:
     # 2. 메인 비교 그래프: 선택일 포함 주간(월~토) 실제 vs 예년(21~25) vs Random Forest 예상 거래량 · 가격 비교 그래프
     st.subheader(f"📈 1. 선택일 포함 주간({week_range_str}) 실제 vs 예년(21~25) vs Random Forest 예상 거래량 · 가격 비교 그래프")
 
+    mkt_en = MARKET_EN_MAP.get(selected_market, selected_market)
+    var_en = VARIETY_EN_MAP.get(selected_variety, selected_variety)
+    unit_en = to_en_unit(selected_unit)
+    week_range_en = f"{mon_str}(Mon) ~ {sat_str}(Sat)"
+    prc_unit_en = "KRW/kg"
+
     fig_comp, (ax_vol, ax_prc) = plt.subplots(1, 2, figsize=(18.5, 6.2))
     x_idx = np.arange(len(win_df))
     x_labels = [
-        f"★ {r['date_label']}\n[선택일]" if r['is_center'] else (f"{r['date_label']}\n(휴장)" if "휴장" in str(r['day_status']) else r['date_label'])
+        f"* {r['date'].strftime('%m/%d')}({WEEKDAY_EN[r['date'].dayofweek]})\n[Selected]"
+        if r['is_center']
+        else (
+            f"{r['date'].strftime('%m/%d')}({WEEKDAY_EN[r['date'].dayofweek]})\n(Closed)"
+            if "휴장" in str(r['day_status'])
+            else f"{r['date'].strftime('%m/%d')}({WEEKDAY_EN[r['date'].dayofweek]})"
+        )
         for _, r in win_df.iterrows()
     ]
 
     for ax in (ax_vol, ax_prc):
-        ax.axvspan(center_idx - 0.42, center_idx + 0.42, color='#FFD166', alpha=0.30, zorder=0, label='선택 기준일')
+        ax.axvspan(center_idx - 0.42, center_idx + 0.42, color='#FFD166', alpha=0.30, zorder=0, label='Selected Date')
         ax.axvline(center_idx, color='#D62828', linestyle='--', linewidth=1.5, alpha=0.8, zorder=1)
 
     # (좌) 일주일간 거래량 비교 그래프 (실제 vs 예년 vs Random Forest 단일 모델만 출력)
@@ -580,7 +614,7 @@ else:
             x_idx + offsets[b_pos],
             win_df['hist_vol_21_25'].fillna(0.0),
             width=bar_w, color='#8ECAE6', edgecolor='#219EBC', alpha=0.85,
-            label='예년(2021~2025) 동시점 물량(톤)'
+            label='2021-2025 Avg Volume (ton)'
         )
         b_pos += 1
 
@@ -590,7 +624,7 @@ else:
             x_idx + offsets[b_pos],
             act_v_arr,
             width=bar_w, color='#1D3557', edgecolor='black', linewidth=0.8, alpha=0.92,
-            label='실제 거래량(톤)'
+            label='Actual Volume (ton)'
         )
         ax_vol.plot(
             x_idx + offsets[b_pos],
@@ -601,7 +635,7 @@ else:
             ax_vol.text(
                 center_idx + offsets[b_pos],
                 act_v_arr[center_idx] * 1.04,
-                f"실제 {act_v_arr[center_idx]:,.1f}톤",
+                f"Act {act_v_arr[center_idx]:,.1f}t",
                 ha='center', va='bottom', fontsize=8.2, fontweight='bold', color='#1D3557'
             )
         b_pos += 1
@@ -611,7 +645,7 @@ else:
         x_idx + offsets[b_pos],
         rf_v_vals,
         width=bar_w, color=best_cfg['color'], alpha=0.90,
-        label=f"{best_cfg['short']} 예상 물량"
+        label=f"{best_cfg['short']} Forecast Volume"
     )
     ax_vol.plot(
         x_idx + offsets[b_pos],
@@ -622,14 +656,14 @@ else:
         ax_vol.text(
             center_idx + offsets[b_pos],
             rf_v_vals[center_idx] * 1.02,
-            f"{rf_v_vals[center_idx]:,.1f}톤",
+            f"{rf_v_vals[center_idx]:,.1f}t",
             ha='center', va='bottom', fontsize=8.5, fontweight='bold', color=best_cfg['color']
         )
 
-    ax_vol.set_title(f"[{selected_market} | {selected_variety} - {selected_unit}] 해당 주간({week_range_str}) 실제 · 예년 · {best_cfg['short']} 예상 거래량 (톤/일)", fontsize=11.5, fontweight='bold', pad=10)
+    ax_vol.set_title(f"[{mkt_en} | {var_en} - {unit_en}] Weekly ({week_range_en}) Volume: Actual vs 2021-2025 vs {best_cfg['short']} (ton/day)", fontsize=11.0, fontweight='bold', pad=10)
     ax_vol.set_xticks(x_idx)
     ax_vol.set_xticklabels(x_labels, fontsize=9.5, fontweight='bold')
-    ax_vol.set_ylabel("거래량 (톤/일)", fontsize=10, fontweight='bold')
+    ax_vol.set_ylabel("Volume (ton/day)", fontsize=10, fontweight='bold')
     ax_vol.yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.1f}'))
     max_vol_candidates = [win_df[f'{best_m}_vol_p90'].max(), win_df['hist_vol_21_25'].max(), win_df['actual_vol_ton'].max(), 1.0]
     max_vol_y = np.nanmax([v for v in max_vol_candidates if pd.notnull(v)])
@@ -643,7 +677,7 @@ else:
             x_idx,
             win_df['hist_prc_21_25'] * prc_mult,
             color='#6C757D', linestyle=':', linewidth=2.0, marker='D', markersize=5.8,
-            label=f'예년(2021~2025) 동시점 가격({prc_unit_str})'
+            label=f"2021-2025 Avg Price ({prc_unit_en})"
         )
 
     if has_any_actual:
@@ -652,11 +686,11 @@ else:
             x_idx,
             act_p_vals,
             color='#1D3557', linestyle='-', linewidth=2.8, marker='*', markersize=9.0, zorder=6,
-            label=f'실제 가격({prc_unit_str})'
+            label=f"Actual Price ({prc_unit_en})"
         )
         if pd.notnull(act_p_vals.iloc[center_idx]):
             ax_prc.annotate(
-                f"실제: {act_p_vals.iloc[center_idx]:,.0f}원",
+                f"Actual: {act_p_vals.iloc[center_idx]:,.0f} KRW",
                 xy=(center_idx, act_p_vals.iloc[center_idx]),
                 xytext=(0, -15), textcoords="offset points",
                 ha='center', fontsize=8.8, fontweight='bold', color='#1D3557'
@@ -668,22 +702,22 @@ else:
     ax_prc.plot(
         x_idx, rf_p50,
         color=best_cfg['color'], linestyle='--', linewidth=2.4, marker=best_cfg['marker'], markersize=7.0,
-        label=f"{best_cfg['short']} 예상 가격"
+        label=f"{best_cfg['short']} Forecast Price"
     )
     if show_quantile_band:
-        ax_prc.fill_between(x_idx, rf_p10, rf_p90, color=best_cfg['color'], alpha=0.14, label=f"{best_cfg['short']} P10~P90 예측구간")
+        ax_prc.fill_between(x_idx, rf_p10, rf_p90, color=best_cfg['color'], alpha=0.14, label=f"{best_cfg['short']} P10-P90 Interval")
     if pd.notnull(rf_p50.iloc[center_idx]):
         ax_prc.annotate(
-            f"{best_cfg['short']}: {rf_p50.iloc[center_idx]:,.0f}원",
+            f"{best_cfg['short']}: {rf_p50.iloc[center_idx]:,.0f} KRW",
             xy=(center_idx, rf_p50.iloc[center_idx]),
             xytext=(0, 8), textcoords="offset points",
             ha='center', fontsize=8.8, fontweight='bold', color=best_cfg['color']
         )
 
-    ax_prc.set_title(f"[{selected_market} | {selected_variety} - {selected_unit}] 해당 주간({week_range_str}) 실제 · 예년 · {best_cfg['short']} 예상 가격 ({prc_unit_str})", fontsize=11.5, fontweight='bold', pad=10)
+    ax_prc.set_title(f"[{mkt_en} | {var_en} - {unit_en}] Weekly ({week_range_en}) Price: Actual vs 2021-2025 vs {best_cfg['short']} ({prc_unit_en})", fontsize=11.0, fontweight='bold', pad=10)
     ax_prc.set_xticks(x_idx)
     ax_prc.set_xticklabels(x_labels, fontsize=9.5, fontweight='bold')
-    ax_prc.set_ylabel(f"가격 ({prc_unit_str})", fontsize=10, fontweight='bold')
+    ax_prc.set_ylabel(f"Price ({prc_unit_en})", fontsize=10, fontweight='bold')
     ax_prc.yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.0f}'))
     ax_prc.legend(loc='upper right', fontsize=8.5)
 
@@ -718,30 +752,30 @@ else:
         act_v_sub = win_df['actual_vol_ton'].fillna(0.0).values
         act_p_sub = (win_df['actual_prc_kg'] * prc_mult).values
 
-        ax1.axvspan(center_idx - 0.42, center_idx + 0.42, color='#FFD166', alpha=0.30, zorder=0, label='선택 기준일')
+        ax1.axvspan(center_idx - 0.42, center_idx + 0.42, color='#FFD166', alpha=0.30, zorder=0, label='Selected Date')
         ax1.axvline(center_idx, color='#D62828', linestyle='--', linewidth=1.4, zorder=1)
 
         if show_hist_21_25 and has_any_actual:
             w_b = 0.24
-            ax1.bar(x_idx - w_b, win_df['hist_vol_21_25'].fillna(0.0), width=w_b, color='#8ECAE6', edgecolor='#219EBC', alpha=0.82, label='예년(21~25) 거래량(톤)')
-            ax1.bar(x_idx, act_v_sub, width=w_b, color='#1D3557', alpha=0.90, label='실제 거래량(톤)')
-            ax1.bar(x_idx + w_b, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} 예상 거래량(톤)")
+            ax1.bar(x_idx - w_b, win_df['hist_vol_21_25'].fillna(0.0), width=w_b, color='#8ECAE6', edgecolor='#219EBC', alpha=0.82, label='2021-2025 Vol (ton)')
+            ax1.bar(x_idx, act_v_sub, width=w_b, color='#1D3557', alpha=0.90, label='Actual Vol (ton)')
+            ax1.bar(x_idx + w_b, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} Forecast Vol (ton)")
             pred_bar_x = x_idx + w_b
             act_bar_x = x_idx
         elif has_any_actual:
             w_b = 0.32
-            ax1.bar(x_idx - w_b/2, act_v_sub, width=w_b, color='#1D3557', alpha=0.90, label='실제 거래량(톤)')
-            ax1.bar(x_idx + w_b/2, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} 예상 거래량(톤)")
+            ax1.bar(x_idx - w_b/2, act_v_sub, width=w_b, color='#1D3557', alpha=0.90, label='Actual Vol (ton)')
+            ax1.bar(x_idx + w_b/2, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} Forecast Vol (ton)")
             pred_bar_x = x_idx + w_b/2
             act_bar_x = x_idx - w_b/2
         elif show_hist_21_25:
             w_b = 0.32
-            ax1.bar(x_idx - w_b/2, win_df['hist_vol_21_25'].fillna(0.0), width=w_b, color='#8ECAE6', edgecolor='#219EBC', alpha=0.82, label='예년(21~25) 거래량(톤)')
-            ax1.bar(x_idx + w_b/2, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} 예상 거래량(톤)")
+            ax1.bar(x_idx - w_b/2, win_df['hist_vol_21_25'].fillna(0.0), width=w_b, color='#8ECAE6', edgecolor='#219EBC', alpha=0.82, label='2021-2025 Vol (ton)')
+            ax1.bar(x_idx + w_b/2, v_p50, width=w_b, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} Forecast Vol (ton)")
             pred_bar_x = x_idx + w_b/2
             act_bar_x = None
         else:
-            ax1.bar(x_idx, v_p50, width=0.45, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} 예상 거래량(톤)")
+            ax1.bar(x_idx, v_p50, width=0.45, color=m_cfg['color'], alpha=0.90, label=f"{m_cfg['short']} Forecast Vol (ton)")
             pred_bar_x = x_idx
             act_bar_x = None
 
@@ -750,21 +784,21 @@ else:
             if valid_q.any():
                 yerr_low = np.maximum(0.0, v_p50[valid_q] - v_p10[valid_q])
                 yerr_high = np.maximum(0.0, v_p90[valid_q] - v_p50[valid_q])
-                ax1.errorbar(pred_bar_x[valid_q], v_p50[valid_q], yerr=[yerr_low, yerr_high], fmt='none', ecolor='#264653', elinewidth=1.3, capsize=3.0, label='예상물량 P10~P90')
+                ax1.errorbar(pred_bar_x[valid_q], v_p50[valid_q], yerr=[yerr_low, yerr_high], fmt='none', ecolor='#264653', elinewidth=1.3, capsize=3.0, label='Forecast Vol P10-P90')
 
         for xi, bv in zip(pred_bar_x, v_p50):
             if bv > 0:
-                ax1.text(xi, bv * 1.02, f"예상\n{bv:,.1f}t", ha='center', va='bottom', fontsize=7.3, fontweight='bold', color=m_cfg['color'])
+                ax1.text(xi, bv * 1.02, f"Pred\n{bv:,.1f}t", ha='center', va='bottom', fontsize=7.3, fontweight='bold', color=m_cfg['color'])
 
         if has_any_actual and act_bar_x is not None:
             for xi, av in zip(act_bar_x, act_v_sub):
                 if av > 0:
-                    ax1.text(xi, av * 1.02, f"실제\n{av:,.1f}t", ha='center', va='bottom', fontsize=7.3, fontweight='bold', color='#1D3557')
+                    ax1.text(xi, av * 1.02, f"Act\n{av:,.1f}t", ha='center', va='bottom', fontsize=7.3, fontweight='bold', color='#1D3557')
 
         ax1.set_title(f"{idx_m + 1}. {m_cfg['label']}", fontsize=11, fontweight='bold', pad=10)
         ax1.set_xticks(x_idx)
         ax1.set_xticklabels(x_labels, fontsize=8.8, fontweight='bold')
-        ax1.set_ylabel("거래량 (톤/일)", color=m_cfg['color'], fontsize=9.5, fontweight='bold')
+        ax1.set_ylabel("Volume (ton/day)", color=m_cfg['color'], fontsize=9.5, fontweight='bold')
         ax1.yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.1f}'))
         max_v_local = np.nanmax([
             np.nanmax(v_p90) if np.isfinite(v_p90).any() else 1.0,
@@ -778,22 +812,22 @@ else:
 
         ax2 = ax1.twinx()
         if show_hist_21_25:
-            ax2.plot(x_idx, win_df['hist_prc_21_25'] * prc_mult, color='#6C757D', linestyle=':', marker='D', markersize=4.8, linewidth=1.6, label=f'예년(21~25) 가격({prc_unit_str})')
+            ax2.plot(x_idx, win_df['hist_prc_21_25'] * prc_mult, color='#6C757D', linestyle=':', marker='D', markersize=4.8, linewidth=1.6, label=f"2021-2025 Price ({prc_unit_en})")
         if has_any_actual:
-            ax2.plot(x_idx, act_p_sub, color='#1D3557', linestyle='-', marker='*', markersize=8.0, linewidth=2.3, zorder=5, label=f'실제 가격({prc_unit_str})')
+            ax2.plot(x_idx, act_p_sub, color='#1D3557', linestyle='-', marker='*', markersize=8.0, linewidth=2.3, zorder=5, label=f"Actual Price ({prc_unit_en})")
             for xi, apv in enumerate(act_p_sub):
                 if np.isfinite(apv):
-                    ax2.text(xi, apv * 0.965, f"실제 {apv:,.0f}원", ha='center', va='top', fontsize=7.5, fontweight='bold', color='#1D3557')
+                    ax2.text(xi, apv * 0.965, f"Act {apv:,.0f}", ha='center', va='top', fontsize=7.5, fontweight='bold', color='#1D3557')
 
-        ax2.plot(x_idx, p_p50, color='#D62828', linestyle='--', marker='s', markersize=5.8, linewidth=2.2, zorder=6, label=f"{m_cfg['short']} 예상 가격({prc_unit_str})")
+        ax2.plot(x_idx, p_p50, color='#D62828', linestyle='--', marker='s', markersize=5.8, linewidth=2.2, zorder=6, label=f"{m_cfg['short']} Forecast Price ({prc_unit_en})")
         if show_quantile_band:
-            ax2.fill_between(x_idx, p_p10, p_p90, color='#D62828', alpha=0.13, label='예상가격 P10~P90')
+            ax2.fill_between(x_idx, p_p10, p_p90, color='#D62828', alpha=0.13, label='Forecast Price P10-P90')
 
         for xi, pv in enumerate(p_p50):
             if np.isfinite(pv):
-                ax2.text(xi, pv * 1.025, f"예상 {pv:,.0f}원", ha='center', va='bottom', fontsize=7.8, fontweight='bold', color='#D62828')
+                ax2.text(xi, pv * 1.025, f"Pred {pv:,.0f}", ha='center', va='bottom', fontsize=7.8, fontweight='bold', color='#D62828')
 
-        ax2.set_ylabel(f"가격 ({prc_unit_str})", color='#D62828', fontsize=9.5, fontweight='bold')
+        ax2.set_ylabel(f"Price ({prc_unit_en})", color='#D62828', fontsize=9.5, fontweight='bold')
         ax2.tick_params(axis='y', labelcolor='#D62828')
         ax2.yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.0f}'))
         ax2.grid(False)
@@ -831,53 +865,53 @@ else:
 
         # (좌) 모델별 가격 예측 정확도(%) 비교
         if has_win_acc:
-            b1 = ax_ap.bar(xm - bw, acc_df['_g_p_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f'선택 규격({selected_variety}-{selected_unit}) 가격 정확도(%)')
-            b2 = ax_ap.bar(xm, acc_df['_w_p_acc'].fillna(0.0), width=bw, color='#E76F51', alpha=0.90, label='해당 주간(월~토) 가격 정확도(%)')
-            b3 = ax_ap.bar(xm + bw, acc_df['_o_p_acc'], width=bw, color='#457B9D', alpha=0.85, label=f'전체 {n_total_groups}개 규격 평균 가격 정확도(%)')
+            b1 = ax_ap.bar(xm - bw, acc_df['_g_p_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f"Selected ({var_en} - {unit_en}) Price Acc (%)")
+            b2 = ax_ap.bar(xm, acc_df['_w_p_acc'].fillna(0.0), width=bw, color='#E76F51', alpha=0.90, label='Selected Week (Mon-Sat) Price Acc (%)')
+            b3 = ax_ap.bar(xm + bw, acc_df['_o_p_acc'], width=bw, color='#457B9D', alpha=0.85, label=f"All {n_total_groups} Units Avg Price Acc (%)")
             for bars_grp in (b1, b2, b3):
                 for b in bars_grp:
                     h = b.get_height()
                     if h > 0:
                         ax_ap.text(b.get_x() + b.get_width()/2, h + 0.4, f"{h:.1f}%", ha='center', va='bottom', fontsize=8.5, fontweight='bold')
         else:
-            b1 = ax_ap.bar(xm - bw/2, acc_df['_g_p_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f'선택 규격({selected_variety}-{selected_unit}) 가격 정확도(%)')
-            b3 = ax_ap.bar(xm + bw/2, acc_df['_o_p_acc'], width=bw, color='#457B9D', alpha=0.85, label=f'전체 {n_total_groups}개 규격 평균 가격 정확도(%)')
+            b1 = ax_ap.bar(xm - bw/2, acc_df['_g_p_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f"Selected ({var_en} - {unit_en}) Price Acc (%)")
+            b3 = ax_ap.bar(xm + bw/2, acc_df['_o_p_acc'], width=bw, color='#457B9D', alpha=0.85, label=f"All {n_total_groups} Units Avg Price Acc (%)")
             for bars_grp in (b1, b3):
                 for b in bars_grp:
                     h = b.get_height()
                     if h > 0:
                         ax_ap.text(b.get_x() + b.get_width()/2, h + 0.4, f"{h:.1f}%", ha='center', va='bottom', fontsize=8.5, fontweight='bold')
 
-        ax_ap.set_title(f"1. 모델별 가격 예측 정확도 (100 - MAPE, %) 비교", fontsize=12, fontweight='bold', pad=10)
+        ax_ap.set_title("1. Price Prediction Accuracy by Model (100 - MAPE, %)", fontsize=12, fontweight='bold', pad=10)
         ax_ap.set_xticks(xm)
         ax_ap.set_xticklabels(acc_df['모델명'], fontsize=10, fontweight='bold')
-        ax_ap.set_ylabel("가격 예측 정확도 (%)", fontsize=10, fontweight='bold')
+        ax_ap.set_ylabel("Price Accuracy (%)", fontsize=10, fontweight='bold')
         ax_ap.set_ylim(50, 105)
         ax_ap.legend(loc='lower right', fontsize=8.5)
 
         # (우) 모델별 거래량 예측 정확도(%) 및 결정계수(R²) 비교
         if has_win_acc:
-            bv1 = ax_av.bar(xm - bw, acc_df['_g_v_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f'선택 규격({selected_variety}-{selected_unit}) 거래량 정확도(100-WMAPE, %)')
-            bv2 = ax_av.bar(xm, acc_df['_w_v_acc'].fillna(0.0), width=bw, color='#E76F51', alpha=0.90, label='해당 주간(월~토) 거래량 정확도(%)')
-            bv3 = ax_av.bar(xm + bw, acc_df['_o_v_r2_pct'], width=bw, color='#8E44AD', alpha=0.85, label=f'전체 {n_total_groups}개 규격 거래량 설명력(R²×100, %)')
+            bv1 = ax_av.bar(xm - bw, acc_df['_g_v_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f"Selected ({var_en} - {unit_en}) Vol Acc (100-WMAPE, %)")
+            bv2 = ax_av.bar(xm, acc_df['_w_v_acc'].fillna(0.0), width=bw, color='#E76F51', alpha=0.90, label='Selected Week (Mon-Sat) Vol Acc (%)')
+            bv3 = ax_av.bar(xm + bw, acc_df['_o_v_r2_pct'], width=bw, color='#8E44AD', alpha=0.85, label=f"All {n_total_groups} Units Vol R2 x 100 (%)")
             for bars_grp in (bv1, bv2, bv3):
                 for b in bars_grp:
                     h = b.get_height()
                     if h > 0:
                         ax_av.text(b.get_x() + b.get_width()/2, h + 0.5, f"{h:.1f}%", ha='center', va='bottom', fontsize=8.5, fontweight='bold')
         else:
-            bv1 = ax_av.bar(xm - bw/2, acc_df['_g_v_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f'선택 규격({selected_variety}-{selected_unit}) 거래량 정확도(100-WMAPE, %)')
-            bv3 = ax_av.bar(xm + bw/2, acc_df['_o_v_r2_pct'], width=bw, color='#8E44AD', alpha=0.85, label=f'전체 {n_total_groups}개 규격 거래량 설명력(R²×100, %)')
+            bv1 = ax_av.bar(xm - bw/2, acc_df['_g_v_acc'], width=bw, color='#2A9D8F', alpha=0.90, label=f"Selected ({var_en} - {unit_en}) Vol Acc (100-WMAPE, %)")
+            bv3 = ax_av.bar(xm + bw/2, acc_df['_o_v_r2_pct'], width=bw, color='#8E44AD', alpha=0.85, label=f"All {n_total_groups} Units Vol R2 x 100 (%)")
             for bars_grp in (bv1, bv3):
                 for b in bars_grp:
                     h = b.get_height()
                     if h > 0:
                         ax_av.text(b.get_x() + b.get_width()/2, h + 0.5, f"{h:.1f}%", ha='center', va='bottom', fontsize=8.5, fontweight='bold')
 
-        ax_av.set_title(f"2. 모델별 거래량 예측 정확도 (100 - WMAPE % 및 결정계수 R²) 비교", fontsize=12, fontweight='bold', pad=10)
+        ax_av.set_title("2. Volume Prediction Accuracy (100 - WMAPE %) & R2 by Model", fontsize=12, fontweight='bold', pad=10)
         ax_av.set_xticks(xm)
         ax_av.set_xticklabels(acc_df['모델명'], fontsize=10, fontweight='bold')
-        ax_av.set_ylabel("거래량 정확도 / 결정계수 (%)", fontsize=10, fontweight='bold')
+        ax_av.set_ylabel("Volume Accuracy / R2 (%)", fontsize=10, fontweight='bold')
         ax_av.set_ylim(40, 106)
         ax_av.legend(loc='lower right', fontsize=8.5)
 
