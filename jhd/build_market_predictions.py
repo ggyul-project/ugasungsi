@@ -336,7 +336,7 @@ def assign_quarterly_2week_folds(date_series, n_folds=N_FOLDS, seed=42):
     분기마다 독립적으로 랜덤 셔플(Random Permutation)하여 6개 Fold에 배정합니다.
     -> 매 Fold마다 모든 3개월 블록에서 서로 다른 랜덤 2주 구간이 검증셋으로 선택됩니다.
     """
-    dt = pd.to_datetime(date_series)
+    dt = pd.Series(pd.to_datetime(date_series)).reset_index(drop=True)
     q_key = (dt.dt.year * 4 + (dt.dt.month - 1) // 3).to_numpy()
     q_start_month = ((dt.dt.month - 1) // 3) * 3 + 1
     q_start = pd.to_datetime(dict(year=dt.dt.year, month=q_start_month, day=1))
